@@ -1,0 +1,550 @@
+{% extends 'base.html' %}
+{% block title %}Live Intrusion Detection System{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+<script src="https://cdn.socket.io/4.5.0/socket.io.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<link rel="stylesheet" href="{{ url_for('static', filename='css/fontawesome.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/templatemo-host-cloud.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/owl.css') }}">
+
+<style>
+    body {
+        color: #1a1a1a;
+    }
+
+    /* Dashboard Cards */
+    .dashboard-card {
+        background: #fff;
+        padding: 25px;
+        border-radius: 8px;
+        box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+        margin-bottom: 30px;
+        height: 100%;
+        border: 1px solid #eaeaea;
+    }
+
+    .card-header-custom {
+        display: flex;
+        align-items: center;
+        border-bottom: 2px solid #f1f1f1;
+        padding-bottom: 15px;
+        margin-bottom: 15px;
+    }
+
+    .card-icon {
+        width: 40px;
+        height: 40px;
+        background: linear-gradient(135deg, #4facfe, #00f2fe);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        margin-right: 15px;
+    }
+
+    .card-title h4 {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 700;
+        color: #1e1e1e;
+    }
+
+    /* Map & Chart */
+    #map {
+        height: 350px;
+        width: 100%;
+        border-radius: 8px;
+        z-index: 1;
+        background: #eee;
+        margin-top: 0 !important;
+        padding-top: 0 !important;
+        display: block;
+    }
+
+    /* Remove gap between Attack Map header and the map itself */
+    .attack-map-card .card-header-custom {
+        padding-bottom: 0 !important;
+        margin-bottom: 0 !important;
+        border-bottom: none !important;
+    }
+
+    .attack-map-card {
+        padding-bottom: 0 !important;
+    }
+
+    .chart-container {
+        position: relative;
+        height: 250px;
+        width: 100%;
+    }
+
+    /* Log Table */
+    .log-wrapper {
+        height: 300px;
+        overflow-y: auto;
+        border: 1px solid #eee;
+        border-radius: 5px;
+    }
+
+    #flow_logs {
+        font-size: 13px;
+    }
+
+    #flow_logs td {
+        padding: 10px;
+        border-bottom: 1px solid #eee;
+        vertical-align: middle;
+    }
+
+    .row-danger {
+        background-color: #fff0f0;
+        color: #d63031;
+        font-weight: bold;
+    }
+
+    .row-benign {
+        color: #2d3436;
+    }
+
+    /* Controls */
+    .btn-action {
+        background: linear-gradient(to right, #4facfe, #00f2fe);
+        border: none;
+        color: #fff;
+        width: 100%;
+        padding: 10px;
+        border-radius: 25px;
+        font-weight: 700;
+        margin-top: 10px;
+        cursor: pointer;
+        transition: 0.3s;
+    }
+
+    .btn-action:hover {
+        transform: translateY(-2px);
+        opacity: 0.9;
+    }
+
+    /* Start Simulation — red gradient override */
+    #startReplay {
+        background: linear-gradient(90deg, #ff4d4d, #ff0000);
+    }
+
+    #startReplay:hover {
+        background: linear-gradient(90deg, #e60000, #cc0000);
+        opacity: 1;
+    }
+
+    .form-range {
+        width: 100%;
+        cursor: pointer;
+    }
+
+    .control-group {
+        margin-bottom: 15px;
+    }
+
+    .control-label {
+        display: flex;
+        justify-content: space-between;
+        font-weight: 700;
+        font-size: 13px;
+    }
+
+    /* Stats */
+    .stat-value {
+        font-size: 32px;
+        font-weight: 800;
+        margin-bottom: 5px;
+        line-height: 1;
+    }
+
+    .stat-label {
+        font-size: 12px;
+        text-transform: uppercase;
+        font-weight: 700;
+        color: #888;
+    }
+
+    /* Header Shadow */
+    .page-heading h1 {
+        text-shadow: 0 3px 10px rgba(0, 0, 0, 0.5);
+    }
+
+    /* Large Top-Left Dialog Toast */
+    #speedToast {
+        position: fixed;
+        top: 100px;
+        left: 30px;
+        background: linear-gradient(135deg, #2b2b2b, #1a1a1a);
+        color: #fff;
+        padding: 25px 40px;
+        border-radius: 12px;
+        font-size: 24px;
+        font-weight: 700;
+        box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6);
+        border-left: 8px solid #ff4d4d;
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        opacity: 0;
+        transform: translateX(-50px);
+        transition: opacity 0.4s ease, transform 0.4s ease;
+        pointer-events: none;
+        z-index: 9999;
+    }
+
+    #speedToast.show {
+        opacity: 1;
+        transform: translateX(0);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- Large Speed Dialog Box -->
+<div id="speedToast">
+    <i class="fa fa-tachometer-alt" style="font-size: 32px; color: #ff4d4d;"></i>
+    <span id="speedToastMsg">Simulation Speed = 1x</span>
+</div>
+
+<div class="page-heading header-text" style="padding: 120px 0 60px;">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-12">
+                <h1>Live Intrusion Detection System</h1>
+                <p><a href="/">Home</a> / <span>Dashboard</span></p>
+                <div class="mt-3">
+                    <span class="badge"
+                        style="background: rgba(0,0,0,0.7); padding: 10px 25px; border-radius: 30px; border: 1px solid #fff;">
+                        Status: <strong style="color: {% if status == 'ON' %}#00ff00{% else %}#ff4444{% endif %}">{{
+                            status }}</strong>
+                    </span>
+                    {% if status != 'ON' %}
+                    <div class="mt-2 text-warning"
+                        style="background: rgba(0,0,0,0.6); padding: 5px 15px; border-radius: 5px; display: inline-block;">
+                        ⚠️ System OFF. Go to Admin to enable.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="services section" style="background: #f4f7f6; padding-top: 40px;">
+    <div class="container">
+
+        <div class="row">
+            <div class="col-lg-8">
+                <div class="dashboard-card attack-map-card">
+                    <div class="card-header-custom">
+                        <div class="card-icon"><i class="fa fa-globe"></i></div>
+                        <div class="card-title">
+                            <h4>Attack Map</h4>
+                        </div>
+                    </div>
+                    <div id="map"></div>
+                </div>
+            </div>
+            <div class="col-lg-4">
+                <div class="dashboard-card">
+                    <div class="card-header-custom">
+                        <div class="card-icon"><i class="fa fa-sliders-h"></i></div>
+                        <div class="card-title">
+                            <h4>Settings</h4>
+                        </div>
+                    </div>
+
+                    <div class="control-group">
+                        <label class="control-label">Sim Speed <span id="speedVal">1x</span></label>
+                        <input type="range" class="form-range" id="replaySpeed" min="1" max="10" value="1">
+                        <script>
+                            const slider = document.getElementById("replaySpeed");
+                            const speedText = document.getElementById("speedVal");
+
+                            // update when slider moves
+                            slider.addEventListener("input", function () {
+                                speedText.innerText = this.value + "x";
+                            });
+                        </script>
+                        <button id="startReplay" class="btn-action">Start Simulation</button>
+                    </div>
+                    <hr>
+                    <div class="control-group">
+                        <label class="control-label">Alpha <span id="alphaVal">0.6</span></label>
+                        <input type="range" class="form-range" id="alpha" min="0" max="1" step="0.05" value="0.6">
+                    </div>
+                    <div class="control-group">
+                        <label class="control-label">Beta <span id="betaVal">0.4</span></label>
+                        <input type="range" class="form-range" id="beta" min="0" max="1" step="0.05" value="0.4">
+                    </div>
+                    <div class="control-group">
+                        <label class="control-label">Threshold <span id="threshVal">0.5</span></label>
+                        <input type="range" class="form-range" id="thresh" min="0" max="1" step="0.01" value="0.5">
+                    </div>
+                    <button id="applyParams" class="btn-action" style="background: #333;">Apply Settings</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-lg-6">
+                <div class="dashboard-card">
+                    <div class="card-header-custom">
+                        <div class="card-icon"><i class="fa fa-list"></i></div>
+                        <div class="card-title">
+                            <h4>Live Feed</h4>
+                        </div>
+                    </div>
+                    <div class="log-wrapper">
+                        <table class="table table-striped mb-0">
+                            <thead>
+                                <tr style="background: #eee; font-size: 12px;">
+                                    <th>Time</th>
+                                    <th>Source IP</th>
+                                    <th>Score</th>
+                                    <th>Result</th>
+                                </tr>
+                            </thead>
+                            <tbody id="flow_logs">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="dashboard-card">
+                    <div class="card-header-custom">
+                        <div class="card-icon"><i class="fa fa-chart-area"></i></div>
+                        <div class="card-title">
+                            <h4>Traffic Intensity</h4>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="trafficChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-lg-6">
+                <div class="dashboard-card d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="stat-value" id="totalPackets">0</div>
+                        <div class="stat-label">Packets Scanned</div>
+                    </div>
+                    <i class="fa fa-network-wired fa-2x" style="color: #ccc;"></i>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="dashboard-card d-flex justify-content-between align-items-center"
+                    style="border-bottom: 4px solid #ff4d4d;">
+                    <div>
+                        <div class="stat-value" style="color: #ff4d4d;" id="totalAttacks">0</div>
+                        <div class="stat-label">Threats Blocked</div>
+                    </div>
+                    <i class="fa fa-shield-virus fa-2x" style="color: #ff4d4d;"></i>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/owl.js') }}"></script>
+<script src="{{ url_for('static', filename='js/accordions.js') }}"></script>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const socket = io();
+
+        // --- 1. Initialize Map ---
+        const map = L.map('map').setView([20, 0], 2);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+        setTimeout(() => { map.invalidateSize(); }, 300);
+
+        const markers = L.layerGroup().addTo(map);
+
+        // --- 2. Initialize Chart (INCREASED HISTORY SIZE) ---
+        const HISTORY_POINTS = 100; // Holds 100 points instead of 20
+        const ctx = document.getElementById('trafficChart').getContext('2d');
+        const trafficChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: Array(HISTORY_POINTS).fill(''),
+                datasets: [{
+                    label: 'Attacks/Sec',
+                    data: Array(HISTORY_POINTS).fill(0),
+                    borderColor: '#ff4d4d',
+                    backgroundColor: 'rgba(255, 77, 77, 0.2)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 0 // Removes dots on line for smoother look
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                scales: {
+                    y: { beginAtZero: true, max: 10 },
+                    x: { display: false }
+                }
+            }
+        });
+
+        // --- 3. State Variables ---
+        let totalPackets = 0;
+        let totalAttacks = 0;
+        let attackCounts = [];
+
+        // --- 4. Handle Data Flow ---
+        socket.on('flow_result', (data) => {
+            console.log("Data Received:", data);
+
+            totalPackets++;
+
+            const isAttack = data.label === 1;
+            if (isAttack) totalAttacks++;
+
+            // Update Stats
+            document.getElementById('totalPackets').innerText = totalPackets;
+            document.getElementById('totalAttacks').innerText = totalAttacks;
+
+            // Update Table
+            const tableBody = document.getElementById('flow_logs');
+            const row = document.createElement('tr');
+
+            if (isAttack) row.classList.add('row-danger');
+            else row.classList.add('row-benign');
+
+            const timeStr = new Date(data.ts * 1000).toLocaleTimeString();
+            const statusText = isAttack ? (data.reason || "ATTACK") : "Normal";
+
+            row.innerHTML = `
+                <td>${timeStr}</td>
+                <td>${data.src_ip}</td>
+                <td>${(data.attack_score || 0).toFixed(2)}</td>
+                <td>${statusText}</td>
+            `;
+
+            tableBody.prepend(row);
+            if (tableBody.children.length > 50) tableBody.lastChild.remove();
+
+            // Update Map — colour-coded markers with hover tooltip
+            if (data.geo && data.geo.lat && data.geo.lon) {
+                const fillColor   = isAttack ? '#ff2222' : '#00cc55';
+                const borderColor = isAttack ? '#ff6666' : '#007733';
+                const labelText   = isAttack ? 'Attack'  : 'Benign';
+
+                const marker = L.circleMarker([data.geo.lat, data.geo.lon], {
+                    radius      : isAttack ? 8 : 6,
+                    fillColor   : fillColor,
+                    color       : borderColor,
+                    weight      : isAttack ? 2 : 1,
+                    fillOpacity : 0.85,
+                    opacity     : 1
+                }).addTo(markers);
+
+                // Shared floating hover tooltip (created once, reused per event)
+                let tip = document.getElementById('map-hover-tooltip-inline');
+                if (!tip) {
+                    tip = document.createElement('div');
+                    tip.id = 'map-hover-tooltip-inline';
+                    Object.assign(tip.style, {
+                        position     : 'fixed',
+                        background   : 'rgba(15,15,25,0.92)',
+                        color        : '#fff',
+                        padding      : '8px 14px',
+                        borderRadius : '8px',
+                        fontSize     : '13px',
+                        fontFamily   : 'monospace',
+                        pointerEvents: 'none',
+                        zIndex       : '9999',
+                        border       : '1px solid #444',
+                        boxShadow    : '0 4px 15px rgba(0,0,0,0.5)',
+                        display      : 'none',
+                        lineHeight   : '1.6',
+                        whiteSpace   : 'nowrap'
+                    });
+                    document.body.appendChild(tip);
+                }
+
+                marker.on('mouseover', function (e) {
+                    tip.innerHTML =
+                        `<span style="color:#aaa">IP:</span>    <b>${data.src_ip}</b><br>` +
+                        `<span style="color:#aaa">Score:</span> <b style="color:${isAttack ? '#ff6666' : '#00dd66'}">${(data.attack_score || 0).toFixed(3)}</b><br>` +
+                        `<span style="color:#aaa">Type:</span>  <b style="color:${isAttack ? '#ff4444' : '#00cc55'}">${labelText}</b>`;
+                    tip.style.display = 'block';
+                    const mapRect = document.getElementById('map').getBoundingClientRect();
+                    tip.style.left = (mapRect.left + e.containerPoint.x + 14) + 'px';
+                    tip.style.top  = (mapRect.top  + e.containerPoint.y - 10) + 'px';
+                });
+                marker.on('mousemove', function (e) {
+                    const mapRect = document.getElementById('map').getBoundingClientRect();
+                    tip.style.left = (mapRect.left + e.containerPoint.x + 14) + 'px';
+                    tip.style.top  = (mapRect.top  + e.containerPoint.y - 10) + 'px';
+                });
+                marker.on('mouseout', function () { tip.style.display = 'none'; });
+            }
+
+            // Update Chart Data
+            attackCounts.push(isAttack ? 1 : 0);
+
+            // Update chart less frequently to save performance but keep history
+            if (attackCounts.length > 5) {
+                const sum = attackCounts.reduce((a, b) => a + b, 0);
+                trafficChart.data.datasets[0].data.push(sum);
+                trafficChart.data.datasets[0].data.shift(); // Removes old point only when new one adds
+                trafficChart.update();
+                attackCounts = [];
+            }
+        });
+
+        // --- 5. Settings Logic ---
+        ['replaySpeed', 'alpha', 'beta', 'thresh'].forEach(id => {
+            document.getElementById(id).addEventListener('input', function () {
+                const suffix = id === 'replaySpeed' ? 'x' : '';
+                document.getElementById(id + 'Val').innerText = this.value + suffix;
+            });
+        });
+
+        document.getElementById('startReplay').addEventListener('click', () => {
+            const speed = document.getElementById('replaySpeed').value;
+            socket.emit('start_replay', { speed: parseFloat(speed) });
+            showToast(`Simulation Speed = ${speed}x`);
+        });
+
+        // Function to handle showing the large toast dialog
+        function showToast(msg) {
+            const toast = document.getElementById('speedToast');
+            document.getElementById('speedToastMsg').innerText = msg;
+            toast.classList.add('show');
+            // Hide after 3 seconds
+            setTimeout(() => { toast.classList.remove('show'); }, 3000);
+        }
+
+        document.getElementById('applyParams').addEventListener('click', () => {
+            const alpha = document.getElementById('alpha').value;
+            const beta = document.getElementById('beta').value;
+            const thresh = document.getElementById('thresh').value;
+            socket.emit('set_params', { alpha: alpha, beta: beta, thresh: thresh });
+            alert(`Parameters Updated: α=${alpha}, β=${beta}, Threshold=${thresh}`);
+        });
+    });
+</script>
+{% endblock %}
